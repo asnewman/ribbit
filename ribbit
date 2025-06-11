@@ -200,9 +200,9 @@ create_worktree() {
     local worktree_dir="../${repo_name}-${BRANCH_NAME}"
     
     # Check if branch already exists
+    local branch_exists=false
     if git show-ref --verify --quiet "refs/heads/$BRANCH_NAME"; then
-        print_error "Branch '$BRANCH_NAME' already exists"
-        exit 1
+        branch_exists=true
     fi
     
     # Check if worktree directory already exists
@@ -212,10 +212,15 @@ create_worktree() {
     fi
     
     print_info "Creating worktree: $worktree_dir"
-    print_info "Creating branch: $BRANCH_NAME"
     
-    # Create the worktree
-    git worktree add "$worktree_dir" -b "$BRANCH_NAME"
+    # Create the worktree with appropriate branch handling
+    if [[ "$branch_exists" == true ]]; then
+        print_info "Using existing branch: $BRANCH_NAME"
+        git worktree add "$worktree_dir" "$BRANCH_NAME"
+    else
+        print_info "Creating new branch: $BRANCH_NAME"
+        git worktree add "$worktree_dir" -b "$BRANCH_NAME"
+    fi
     
     # Change to worktree directory
     cd "$worktree_dir"
@@ -284,9 +289,7 @@ cleanup_worktree() {
     print_info "Removing worktree..."
     git worktree remove "$current_dir" --force
     
-    # Delete the branch
-    print_info "Deleting branch: $branch_name"
-    git branch -D "$branch_name"
+    print_info "Branch '$branch_name' preserved"
     
     print_success "Cleanup completed!"
     print_info "You are now in: $(pwd)"
