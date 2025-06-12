@@ -25,6 +25,8 @@ print_info() {
 usage() {
     echo "Usage:"
     echo "  ribbit <branch-name> [--share|--clone file1,file2,...]  Create new agent worktree"
+    echo "  ribbit share <file1,file2,...>                          Share additional files in current worktree"
+    echo "  ribbit clone <file1,file2,...>                          Clone additional files in current worktree"
     echo "  ribbit cleanup                                           Clean up current agent worktree"
     echo "  ribbit list                                              List active agent worktrees"
     echo ""
@@ -35,6 +37,8 @@ usage() {
     echo "Examples:"
     echo "  ribbit implement-user-auth --share .env,.env.local"
     echo "  ribbit fix-login-bug --clone .env,.env.local"
+    echo "  ribbit share .env.production,config/database.yml"
+    echo "  ribbit clone secrets.json"
     echo "  ribbit cleanup"
 }
 
@@ -70,6 +74,14 @@ parse_args() {
             ;;
         "list")
             COMMAND="list"
+            ;;
+        "share")
+            COMMAND="share"
+            SHARE_FILES="$2"
+            ;;
+        "clone")
+            COMMAND="clone"
+            CLONE_FILES="$2"
             ;;
         "--help"|"-h")
             usage
@@ -125,6 +137,12 @@ main() {
             ;;
         "list")
             list_worktrees
+            ;;
+        "share")
+            share_files
+            ;;
+        "clone")
+            clone_files_to_worktree
             ;;
     esac
 }
@@ -296,6 +314,86 @@ cleanup_worktree() {
     
     # Start a new shell in the main repo directory
     exec "$SHELL"
+}
+
+# Check if current directory is a ribbit worktree
+check_ribbit_worktree() {
+    check_git_repo
+    
+    local current_dir=$(pwd)
+    local worktree_list=$(git worktree list --porcelain)
+    local is_agent_worktree=false
+    
+    # Check if we're in a ribbit worktree
+    while IFS= read -r line; do
+        if [[ $line == worktree* ]]; then
+            local worktree_path=$(echo "$line" | cut -d' ' -f2)
+            if [[ "$current_dir" == "$worktree_path" ]]; then
+                local dir_name=$(basename "$current_dir")
+                if [[ "$dir_name" =~ ^[^-]+-[^-]+.*$ ]]; then
+                    is_agent_worktree=true
+                    break
+                fi
+            fi
+        fi
+    done <<< "$worktree_list"
+    
+    if [[ "$is_agent_worktree" == false ]]; then
+        print_error "Not in a ribbit worktree directory"
+        print_info "This command must be run from within a ribbit worktree"
+        exit 1
+    fi
+}
+
+# Find main repository directory
+find_main_repo() {
+    local worktree_list=$(git worktree list --porcelain)
+    local main_repo_dir=""
+    
+    while IFS= read -r line; do
+        if [[ $line == worktree* ]]; then
+            local worktree_path=$(echo "$line" | cut -d' ' -f2)
+            # Check if this is likely the main repo (first one without branch info)
+            if [[ -z "$main_repo_dir" ]]; then
+                main_repo_dir="$worktree_path"
+            fi
+        elif [[ $line == branch* ]]; then
+            # If we see a branch, the previous worktree wasn't main
+            continue
+        fi
+    done <<< "$worktree_list"
+    
+    echo "$main_repo_dir"
+}
+
+# Share additional files in current worktree
+share_files() {
+    check_ribbit_worktree
+    
+    if [[ -z "$SHARE_FILES" ]]; then
+        print_error "No files specified to share"
+        exit 1
+    fi
+    
+    local main_repo_dir=$(find_main_repo)
+    print_info "Sharing files from main repo..."
+    create_symlinks "$SHARE_FILES" "$main_repo_dir"
+    print_success "Files shared successfully!"
+}
+
+# Clone additional files to current worktree
+clone_files_to_worktree() {
+    check_ribbit_worktree
+    
+    if [[ -z "$CLONE_FILES" ]]; then
+        print_error "No files specified to clone"
+        exit 1
+    fi
+    
+    local main_repo_dir=$(find_main_repo)
+    print_info "Copying files from main repo..."
+    copy_files "$CLONE_FILES" "$main_repo_dir"
+    print_success "Files copied successfully!"
 }
 
 # List all agent worktrees
