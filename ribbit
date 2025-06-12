@@ -215,7 +215,9 @@ create_worktree() {
     
     local repo_name=$(get_repo_name)
     local main_repo_dir=$(git rev-parse --show-toplevel)
-    local worktree_dir="../${repo_name}-${BRANCH_NAME}"
+    # Sanitize branch name for directory naming (replace / with -)
+    local sanitized_branch_name="${BRANCH_NAME//\//-}"
+    local worktree_dir="../${repo_name}-${sanitized_branch_name}"
     
     # Check if branch already exists
     local branch_exists=false
@@ -276,7 +278,7 @@ cleanup_worktree() {
             if [[ "$current_dir" == "$worktree_path" ]] && [[ $(basename "$current_dir") != $(basename "$main_repo_dir" 2>/dev/null || echo "") ]]; then
                 # Check if this looks like a worktree created by ribbit (repo-name-branch-name pattern)
                 local dir_name=$(basename "$current_dir")
-                if [[ "$dir_name" =~ ^[^-]+-[^-]+.*$ ]]; then
+                if [[ "$dir_name" =~ ^[^-]+-.+$ ]]; then
                     is_agent_worktree=true
                 fi
             else
@@ -330,7 +332,7 @@ check_ribbit_worktree() {
             local worktree_path=$(echo "$line" | cut -d' ' -f2)
             if [[ "$current_dir" == "$worktree_path" ]]; then
                 local dir_name=$(basename "$current_dir")
-                if [[ "$dir_name" =~ ^[^-]+-[^-]+.*$ ]]; then
+                if [[ "$dir_name" =~ ^[^-]+-.+$ ]]; then
                     is_agent_worktree=true
                     break
                 fi
@@ -341,6 +343,14 @@ check_ribbit_worktree() {
     if [[ "$is_agent_worktree" == false ]]; then
         print_error "Not in a ribbit worktree directory"
         print_info "This command must be run from within a ribbit worktree"
+        exit 1
+    fi
+    
+    # Check if we're in main/master branch (prevent share/clone in main repo)
+    local current_branch=$(git branch --show-current)
+    if [[ "$current_branch" == "main" || "$current_branch" == "master" ]]; then
+        print_error "Cannot share/clone files in main/master branch"
+        print_info "Share and clone commands are only allowed in ribbit worktrees"
         exit 1
     fi
 }
@@ -418,7 +428,7 @@ list_worktrees() {
             
             # Check if this is a ribbit worktree (repo-name-branch-name pattern)
             local dir_name=$(basename "$current_worktree")
-            if [[ "$dir_name" =~ ^[^-]+-[^-]+.*$ ]] && [[ "$current_worktree" != */.git/worktrees/* ]]; then
+            if [[ "$dir_name" =~ ^[^-]+-.+$ ]] && [[ "$current_worktree" != */.git/worktrees/* ]]; then
                 # Extract branch name (everything after first dash and repo name)
                 local repo_part=$(echo "$dir_name" | cut -d'-' -f1)
                 local branch_part=$(echo "$dir_name" | cut -d'-' -f2-)
